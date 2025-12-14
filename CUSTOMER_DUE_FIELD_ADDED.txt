@@ -1,0 +1,14 @@
+Backend e customer_current_due field already ache sale_invoice table e.
+
+Frontend e Due column e ekhon customerCurrentDue field show hobe.
+
+Line 920 theke getAllSaleInvoice method e map function e add korte hobe:
+$item->customerCurrentDue = $item->customer_current_due;
+$item->customerPreviousDue = $item->customer_previous_due;
+
+Eta 3 jaygay add korte hobe:
+1. Line 920 - main query section
+2. Line 680 - report query section  
+3. Line 560 - search query section
+
+Frontend already updated hoyeche - customerCurrentDue field show korbe Due column e.

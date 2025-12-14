@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Import Customers</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            line-height: 1.6;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        h1 {
+            text-align: center;
+            color: #333;
+        }
+        .btn {
+            display: inline-block;
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px 20px;
+            text-align: center;
+            text-decoration: none;
+            font-size: 16px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 10px 0;
+        }
+        .btn:hover {
+            background-color: #45a049;
+        }
+        pre {
+            background-color: #f5f5f5;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+        }
+        #result {
+            margin-top: 20px;
+            padding: 10px;
+            border-radius: 5px;
+            display: none;
+        }
+        .success {
+            background-color: #dff0d8;
+            color: #3c763d;
+        }
+        .error {
+            background-color: #f2dede;
+            color: #a94442;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Import Customers</h1>
+        <p>Click the button below to import all customers into the database:</p>
+        <button id="importBtn" class="btn">Import Customers</button>
+        
+        <div id="result"></div>
+        
+        <h2>Customer List</h2>
+        <pre>
+AMAR GOLUI
+SAKTI NATH KHA
+AMAR SAHA
+SAMANTA MURGI
+AMIT GHOSE
+SANDIP KHARA
+ANANDA NANDI
+SANJAY DEY
+ASHIM PATRA
+SANTANU JANA
+ASHOKE MOLLIK
+SANTU POLLEY
+ASHOKE POLLEY
+SHIB SHANKAR SHAW
+BABLU SAMANTA
+SHITAL SHAW
+BAPPA MONDAL
+SOURAV SADHUKHA
+BINOD SHAW
+SRIKANTA SINGH
+BIPIN DHARA
+SUBHRA POLLEY
+BISWAJIT SAHA
+SUKUMAR SADHUKA
+DEBASISH KARAR
+SURESH SHAW 1
+DILIP SHAW
+SWAPAN MAJI
+HALU DA
+TAPAN PATRA
+JHORO DA
+TULU SOMU
+KARTIK DAS
+UTTAM SHEET
+KHOKON KUNDU
+MADAN MOHAN GHOSH
+NANDI BROTHERS
+NAYAN DUTTA
+NIMAI DEYASI
+PULOK SIL
+RAMPRASAD SHEET
+        </pre>
+    </div>
+
+    <script>
+        document.getElementById('importBtn').addEventListener('click', function() {
+            this.disabled = true;
+            this.textContent = 'Importing...';
+            
+            fetch('/import-customers')
+                .then(response => response.json())
+                .then(data => {
+                    const resultDiv = document.getElementById('result');
+                    resultDiv.style.display = 'block';
+                    
+                    if (data.message) {
+                        resultDiv.className = 'success';
+                        resultDiv.textContent = data.message;
+                    } else if (data.error) {
+                        resultDiv.className = 'error';
+                        resultDiv.textContent = 'Error: ' + data.error;
+                    }
+                    
+                    this.textContent = 'Import Customers';
+                    this.disabled = false;
+                })
+                .catch(error => {
+                    const resultDiv = document.getElementById('result');
+                    resultDiv.style.display = 'block';
+                    resultDiv.className = 'error';
+                    resultDiv.textContent = 'Error: ' + error.message;
+                    
+                    this.textContent = 'Import Customers';
+                    this.disabled = false;
+                });
+        });
+    </script>
+</body>
+</html>
