@@ -1,63 +1,75 @@
-# SPMURI Backend Deployment Guide
+# Deployment Guide - Total Calculation Migration
 
-## 🚀 Simple Deployment Steps (No Technical Knowledge Required)
+## Problem
+Live server e purano sale invoices ache jegulo te `total_calculation` field null/0 ache. Notun code e `total_calculation` field use hocche, tai purano data show hobe na.
 
-### Step 1: Prepare Project
-1. Zip the entire `SPMURI_BACKEND` folder
-2. Make sure all files are included
+## Solution
+Backward compatibility add kora hoyeche + data migration script create kora hoyeche.
 
-### Step 2: Upload to Hostinger
-1. Login to Hostinger Dashboard
-2. Go to File Manager (hPanel)
-3. Navigate to `public_html` folder
-4. Upload the zip file
-5. Extract the zip file
+## Deployment Steps (Live Server e)
 
-### Step 3: Setup Environment
-1. Go to `SPMURI_BACKEND` folder
-2. Rename `.env.production` to `.env`
-3. Edit `.env` file and update:
-   - Database credentials
-   - Domain URL
-   - Email settings
+### Step 1: Backup Database
+```bash
+# Database backup nao before migration
+mysqldump -u username -p database_name > backup_before_migration.sql
+```
 
-### Step 4: Setup Public Access
-1. Copy all files from `SPMURI_BACKEND/public/` 
-2. Paste them to `public_html/api/` folder
-3. Edit `public_html/api/index.php`:
-   - Change `__DIR__.'/../` to `__DIR__.'/../../SPMURI_BACKEND/`
+### Step 2: Pull Latest Code
+```bash
+git pull origin main
+```
 
-### Step 5: Database Setup
-1. Create MySQL database in hPanel
-2. Import your local database
-3. Update database credentials in `.env`
+### Step 3: Run Migrations
+```bash
+# First migration: Add total_calculation column
+php artisan migrate --path=database/migrations/2025_02_03_000000_add_total_calculation_to_sale_invoice_table.php
 
-### Step 6: Test APIs
-- Login: `https://yourdomain.com/api/user/login`
-- Test: `https://yourdomain.com/api/simple-test`
+# Second migration: Populate existing data
+php artisan migrate --path=database/migrations/2025_02_03_000001_populate_total_calculation_for_existing_invoices.php
+```
 
-## 🔗 API Endpoints After Deployment
+### Step 4: Verify Data
+```sql
+-- Check if total_calculation is populated
+SELECT id, totalAmount, total_calculation 
+FROM saleinvoice 
+WHERE total_calculation = 0 OR total_calculation IS NULL
+LIMIT 10;
+```
 
-### Public APIs (No Token Required):
-- `POST /api/user/login`
-- `GET /api/simple-test`
-- `GET /api/simple-users`
-- `GET /api/products`
+### Step 5: Clear Cache
+```bash
+php artisan cache:clear
+php artisan config:clear
+php artisan route:clear
+```
 
-### Protected APIs (Token Required):
-- `GET /api/user/` (with Authorization header)
-- `GET /api/dashboard/`
-- `GET /api/product/`
+## Rollback (If Needed)
+```bash
+php artisan migrate:rollback --step=1
+```
 
-## 🆘 If Something Goes Wrong:
-1. Check `.env` file exists
-2. Check database connection
-3. Check file permissions (755)
-4. Check `.htaccess` file exists in public folder
+## How It Works
 
-## ✅ Success Indicators:
-- Login API returns JWT token
-- Simple test API returns success message
-- Protected APIs work with token
+### Backend Changes:
+1. **Backward Compatibility**: CustomerController e fallback logic add kora hoyeche
+   - Jodi `total_calculation` null/0 hoy, tahole transaction theke calculate korbe
+   - Jodi transaction e na thake, tahole `totalAmount` field use korbe
 
-Your project is 100% ready for deployment!
+2. **Data Migration**: Existing invoices er jonno `total_calculation` populate korbe
+   - Transaction table theke amount niye update korbe
+   - Jodi transaction na thake, totalAmount field use korbe
+
+### Frontend Changes:
+- Kono change lagbe na, backend theke thik data ashbe
+
+## Testing Checklist
+- [ ] Purano invoices properly show hocche
+- [ ] Notun invoices properly save hocche
+- [ ] Transaction list thik show hocche
+- [ ] Total amount calculation thik ache
+
+## Notes
+- Migration automatic purano data populate kore debe
+- Backend e fallback logic ache, tai jodi kono data miss hoy tahole o kaj korbe
+- Live e deploy korar age staging/test server e test koro

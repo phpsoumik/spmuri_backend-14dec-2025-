@@ -24,6 +24,10 @@ class Transaction extends Model
         'status',
     ];
 
+    protected $casts = [
+        'date' => 'date',
+    ];
+
     public function debit(): BelongsTo
     {
         return $this->belongsTo(SubAccount::class, 'debitId');

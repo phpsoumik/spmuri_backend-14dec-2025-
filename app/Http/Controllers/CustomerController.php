@@ -885,7 +885,6 @@ class CustomerController extends Controller
                 })
                 ->get();
 
-            // transaction of the paidAmount
             $totalPaidAmount = Transaction::where('type', 'sale')
                 ->whereIn('relatedId', $allSaleInvoiceId)
                 ->where(function ($query) {
@@ -893,7 +892,6 @@ class CustomerController extends Controller
                 })
                 ->get();
 
-            // transaction of the total amount
             $totalAmountOfReturn = Transaction::where('type', 'sale_return')
                 ->whereIn('relatedId', $allSaleInvoiceId)
                 ->where(function ($query) {
@@ -901,7 +899,6 @@ class CustomerController extends Controller
                 })
                 ->get();
 
-            // transaction of the total instant return
             $totalInstantReturnAmount = Transaction::where('type', 'sale_return')
                 ->whereIn('relatedId', $allSaleInvoiceId)
                 ->where(function ($query) {
@@ -909,31 +906,149 @@ class CustomerController extends Controller
                 })
                 ->get();
 
-            //get all transactions related to purchaseInvoiceId
-            $allTransaction = Transaction::whereIn('type', ["sale", "sale_return"])
-                ->whereIn('relatedId', $allSaleInvoiceId)
-                ->with('debit:id,name', 'credit:id,name')
-                ->orderBy('id', 'desc')
-                ->get();
+            $customerTransactions = [];
+            $allInvoices = $customersAllInvoice->saleInvoice->sortBy('date');
+            
+            foreach ($allInvoices as $invoice) {
+                // Calculate total invoice amount including commission, bag, and previous due
+                $invoiceAmount = (float)($invoice->totalAmount ?? 0);
+                $commissionValue = (float)($invoice->commission_value ?? 0);
+                $bagAmount = (float)($invoice->bag_quantity ?? 0) * (float)($invoice->bag_price ?? 0);
+                $previousDue = (float)($invoice->customer_previous_due ?? 0);
+                $purchaseAmount = $invoiceAmount + $commissionValue + $bagAmount + $previousDue;
+                
+                // Get bag quantity and muri kg from invoice products
+                $totalBagQty = 0;
+                $totalMuriKg = 0;
+                $productDetails = [];
+                
+                if ($invoice->saleInvoiceProduct) {
+                    foreach ($invoice->saleInvoiceProduct as $product) {
+                        $totalBagQty += (float)($product->bag ?? 0);
+                        $totalMuriKg += (float)($product->kg ?? 0);
+                        
+                        // Add product details for breakdown
+                        if ($product->bag > 0 || $product->kg > 0) {
+                            $productDetails[] = [
+                                'bag' => (float)($product->bag ?? 0),
+                                'kg' => (float)($product->kg ?? 0),
+                                'price' => (float)($product->productUnitSalePrice ?? 0),
+                            ];
+                        }
+                    }
+                }
+                
+                $invoiceBalance = $purchaseAmount;
+                
+                $openingBalance = (float)($singleCustomer->last_due_amount ?? 0) - (float)($singleCustomer->opening_advance_amount ?? 0);
+                
+                $customerTransactions[] = [
+                    'date' => date('Y-m-d', strtotime($invoice->date)),
+                    'invoiceId' => $invoice->id,
+                    'description' => 'Product Purchase - Invoice #' . $invoice->id,
+                    'openingBalance' => $openingBalance,
+                    'bagQuantity' => $totalBagQty,
+                    'muriKg' => $totalMuriKg,
+                    'productAmount' => $invoiceAmount,
+                    'purchaseAmount' => $purchaseAmount,
+                    'returnAmount' => 0,
+                    'payment' => 0,
+                    'balance' => $invoiceBalance,
+                    'invoiceDetails' => [
+                        'products' => $productDetails,
+                        'bagQuantity' => (float)($invoice->bag_quantity ?? 0),
+                        'bagPrice' => (float)($invoice->bag_price ?? 0),
+                        'commissionType' => $invoice->commission_type ?? null,
+                        'commissionValue' => (float)($invoice->commission_value ?? 0),
+                    ],
+                ];
+                
+                $invoicePayments = Transaction::where('type', 'sale')
+                    ->where('relatedId', $invoice->id)
+                    ->where('creditId', 4)
+                    ->orderBy('date', 'asc')
+                    ->get();
+                
+                foreach ($invoicePayments as $payment) {
+                    $invoiceBalance -= (float)$payment->amount;
+                    
+                    $customerTransactions[] = [
+                        'date' => date('Y-m-d', strtotime($payment->date)),
+                        'invoiceId' => $invoice->id,
+                        'description' => 'Payment Received - Invoice #' . $invoice->id,
+                        'openingBalance' => 0,
+                        'bagQuantity' => 0,
+                        'muriKg' => 0,
+                        'purchaseAmount' => 0,
+                        'returnAmount' => 0,
+                        'payment' => (float)$payment->amount,
+                        'balance' => $invoiceBalance,
+                    ];
+                }
+                
+                // Add return transactions for this invoice
+                $invoiceReturns = Transaction::where('type', 'sale_return')
+                    ->where('relatedId', $invoice->id)
+                    ->where('creditId', 4)
+                    ->orderBy('date', 'asc')
+                    ->get();
+                
+                foreach ($invoiceReturns as $return) {
+                    $invoiceBalance -= (float)$return->amount;
+                    
+                    $customerTransactions[] = [
+                        'date' => date('Y-m-d', strtotime($return->date)),
+                        'invoiceId' => $invoice->id,
+                        'description' => 'Product Return - Invoice #' . $invoice->id,
+                        'openingBalance' => 0,
+                        'bagQuantity' => 0,
+                        'muriKg' => 0,
+                        'purchaseAmount' => 0,
+                        'returnAmount' => (float)$return->amount,
+                        'payment' => 0,
+                        'balance' => $invoiceBalance,
+                    ];
+                }
+            }
+            
+            $allTransaction = $customerTransactions;
 
-            //get all return sale invoice
             $allReturnSaleInvoice = ReturnSaleInvoice::whereIn('saleInvoiceId', $allSaleInvoiceId)
                 ->orderBy('created_at', 'desc')
                 ->with('returnSaleInvoiceProduct')
                 ->get();
-
-            // calculate grand total due amount
-            $totalDueAmount = (($totalAmount->sum('amount') - $totalAmountOfReturn->sum('amount')) - $totalPaidAmount->sum('amount')) + $totalInstantReturnAmount->sum('amount');
-
-            // include dynamic transaction data in singleSupplier
-            $singleCustomer->totalAmount = takeUptoThreeDecimal((float)$totalAmount->sum('amount')) ?? 0;
-            $singleCustomer->totalPaidAmount = takeUptoThreeDecimal((float)$totalPaidAmount->sum('amount')) ?? 0;
+            
+            // Get latest invoice's total amount for Total Amount display
+            $latestInvoice = $customersAllInvoice->saleInvoice->sortByDesc('id')->first();
+            
+            // Calculate latest invoice total amount only
+            $latestInvoiceAmount = 0;
+            if ($latestInvoice) {
+                $invoiceAmount = (float)($latestInvoice->totalAmount ?? 0);
+                $commissionValue = (float)($latestInvoice->commission_value ?? 0);
+                $bagAmount = (float)($latestInvoice->bag_quantity ?? 0) * (float)($latestInvoice->bag_price ?? 0);
+                $previousDue = (float)($latestInvoice->customer_previous_due ?? 0);
+                $latestInvoiceAmount = $invoiceAmount + $commissionValue + $bagAmount + $previousDue;
+            }
+            
+            // Get total paid amount from all invoices
+            $totalPaidAmountSum = Transaction::where('type', 'sale')
+                ->whereIn('relatedId', $allSaleInvoiceId)
+                ->where('creditId', 4)
+                ->sum('amount');
+            
+            // Use customer's current_due_amount for Due Amount
+            $customerCurrentDue = (float)$singleCustomer->current_due_amount;
+            
+            // include dynamic transaction data in singleCustomer
+            $singleCustomer->totalAmount = takeUptoThreeDecimal((float)$latestInvoiceAmount) ?? 0;
+            $singleCustomer->totalPaidAmount = takeUptoThreeDecimal((float)$totalPaidAmountSum) ?? 0;
             $singleCustomer->totalReturnAmount = takeUptoThreeDecimal((float)$totalAmountOfReturn->sum('amount')) ?? 0;
             $singleCustomer->instantPaidReturnAmount = takeUptoThreeDecimal((float)$totalInstantReturnAmount->sum('amount')) ?? 0;
-            $singleCustomer->dueAmount = takeUptoThreeDecimal((float)$totalDueAmount) ?? 0;
+            $singleCustomer->dueAmount = takeUptoThreeDecimal((float)$customerCurrentDue) ?? 0;
             $singleCustomer->totalSaleInvoice = $allSaleInvoiceId->count() ?? 0;
             $singleCustomer->totalReturnSaleInvoice = $allReturnSaleInvoiceId->count() ?? 0;
-            $singleCustomer->allTransaction = arrayKeysToCamelCase($allTransaction->toArray());
+            $singleCustomer->allTransaction = arrayKeysToCamelCase($allTransaction);
             $singleCustomer->returnSaleInvoice = arrayKeysToCamelCase($allReturnSaleInvoice->toArray());
 
 
@@ -1033,19 +1148,47 @@ class CustomerController extends Controller
     // delete a single customer data controller method
     public function deleteSingleCustomer(Request $request, $id): jsonResponse
     {
+        DB::beginTransaction();
         try {
+            $customer = Customer::where('id', (int)$id)->first();
 
-            $deleted = Customer::where('id', (int)$id)->first();
-
-            if (!$deleted) {
+            if (!$customer) {
+                DB::rollBack();
                 return response()->json(['error' => 'Customer Not Found!'], 404);
             }
 
-            $deleted->status = $request->status;
-            $deleted->save();
+            // Get all sale invoices for this customer
+            $saleInvoices = DB::table('saleInvoice')->where('customerId', $id)->pluck('id');
 
-            return response()->json(["message" => "Customer Deleted SuccessFull"], 200);
+            if ($saleInvoices->isNotEmpty()) {
+                // Delete all transactions related to these invoices
+                DB::table('transaction')
+                    ->where('type', 'sale')
+                    ->whereIn('relatedId', $saleInvoices)
+                    ->delete();
+                
+                DB::table('transaction')
+                    ->where('type', 'sale_return')
+                    ->whereIn('relatedId', $saleInvoices)
+                    ->delete();
+
+                // Delete sale invoice products
+                DB::table('saleInvoiceProduct')->whereIn('invoiceId', $saleInvoices)->delete();
+
+                // Delete return sale invoices
+                DB::table('returnSaleInvoice')->whereIn('saleInvoiceId', $saleInvoices)->delete();
+
+                // Delete sale invoices
+                DB::table('saleInvoice')->where('customerId', $id)->delete();
+            }
+
+            // Delete the customer
+            $customer->delete();
+
+            DB::commit();
+            return response()->json(["message" => "success"], 200);
         } catch (Exception $err) {
+            DB::rollBack();
             return response()->json(['error' => $err->getMessage()], 500);
         }
     }

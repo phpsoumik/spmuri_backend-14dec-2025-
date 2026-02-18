@@ -20,6 +20,7 @@ class SaleInvoice extends Model
         'date',
         'invoiceMemoNo',
         'totalAmount',
+        'total_calculation',
         'totalTaxAmount',
         'totalDiscountAmount',
         'paidAmount',

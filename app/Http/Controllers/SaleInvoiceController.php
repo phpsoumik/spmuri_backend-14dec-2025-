@@ -195,6 +195,19 @@ class SaleInvoiceController extends Controller
             // Update due calculation with GST
             $due = $grandTotal - (float)$totalPaidAmount;
 
+            // Calculate total calculation with commission and bag
+            $commissionValue = (float)$request->input('commissionValue', 0);
+            $bagQuantity = (float)$request->input('bagQuantity', 0);
+            $bagPrice = (float)$request->input('bagPrice', 0);
+            $bagAmount = $bagQuantity * $bagPrice;
+            
+            // Get customer previous due
+            $customer = \App\Models\Customer::find($request->input('customerId'));
+            $customerPreviousDue = $customer ? ($customer->current_due_amount ?? 0) : 0;
+            
+            // Calculate total_calculation = product amount + commission + bag amount + previous due
+            $totalCalculation = $totalSalePriceWithDiscount + $commissionValue + $bagAmount + $customerPreviousDue;
+
             // Create sale invoice
             $createdInvoice = SaleInvoice::create([
                 'date' => $date,
@@ -548,6 +561,8 @@ class SaleInvoiceController extends Controller
                     $item->instantPaidReturnAmount = takeUptoThreeDecimal($instantPaidReturnAmount);
                     // Keep original database dueAmount
                     $item->returnAmount = takeUptoThreeDecimal($totalReturnAmount);
+                    $item->customerCurrentDue = $item->customer_current_due;
+                    $item->customerPreviousDue = $item->customer_previous_due;
                     return $item;
                 });
 
@@ -684,6 +699,8 @@ class SaleInvoiceController extends Controller
                     $item->instantPaidReturnAmount = takeUptoThreeDecimal($instantPaidReturnAmount);
                     // Keep original database dueAmount
                     $item->returnAmount = takeUptoThreeDecimal($totalReturnAmount);
+                    $item->customerCurrentDue = $item->customer_current_due;
+                    $item->customerPreviousDue = $item->customer_previous_due;
                     return $item;
                 });
 
@@ -1133,6 +1150,13 @@ class SaleInvoiceController extends Controller
             
             // New customer due = previous due (without this invoice) + new invoice due
             $customerNewDue = $customerCurrentDueWithoutThisInvoice + $newDueAmount;
+            
+            // Calculate total_calculation for update
+            $commissionValue = (float)$request->input('commissionValue', 0);
+            $bagQuantity = (float)$request->input('bagQuantity', 0);
+            $bagPrice = (float)$request->input('bagPrice', 0);
+            $bagAmount = $bagQuantity * $bagPrice;
+            $totalCalculation = $totalAmount + $commissionValue + $bagAmount + $customerCurrentDueWithoutThisInvoice;
             
             // Update sale invoice
             $saleInvoice->update([

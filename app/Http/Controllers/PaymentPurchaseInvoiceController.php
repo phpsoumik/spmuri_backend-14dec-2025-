@@ -19,7 +19,7 @@ class PaymentPurchaseInvoiceController extends Controller
     {
         DB::beginTransaction();
         try {
-            $date = Carbon::parse($request->input('date'));
+            $date = $request->input('date');
             $transaction = [];
             $amount = 0;
 
@@ -94,7 +94,7 @@ class PaymentPurchaseInvoiceController extends Controller
             foreach ($request->paidAmount as $amountData) {
                 if ($amountData['amount'] > 0) {
                     $transaction = Transaction::create([
-                        'date' => new DateTime($date),
+                        'date' => $date,
                         'debitId' => 5,
                         'creditId' => $amountData['paymentType'] ? $amountData['paymentType'] : 1,
                         'amount' => takeUptoThreeDecimal((float)$amountData['amount']),

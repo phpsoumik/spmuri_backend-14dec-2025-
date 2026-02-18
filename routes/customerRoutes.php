@@ -37,4 +37,4 @@ Route::middleware('permission:readSingle-customer')->get("/{id}", [CustomerContr
 
 Route::middleware('permission:update-customer', 'fileUploader:1')->put("/{id}", [CustomerController::class, 'updateSingleCustomer']);
 
-Route::middleware('permission:delete-customer')->patch("/{id}", [CustomerController::class, 'deleteSingleCustomer']);
+Route::middleware('permission:delete-customer')->delete("/{id}", [CustomerController::class, 'deleteSingleCustomer']);

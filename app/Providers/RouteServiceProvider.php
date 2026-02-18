@@ -237,6 +237,9 @@ class RouteServiceProvider extends ServiceProvider
             // Direct expense-reports route for frontend
             Route::get('/expense-reports', [\App\Http\Controllers\ExpenseController::class, 'reports']);
             
+            // Cart Order routes (eCommerce)
+            Route::prefix('cart-order')
+                ->group(base_path('routes/cartOrderRoutes.php'));
 
         });
     }

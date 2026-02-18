@@ -19,7 +19,8 @@ class PaymentSaleInvoiceController extends Controller
     {
         DB::beginTransaction();
         try {
-            $date = Carbon::parse($request->input('date'))->toDateString();
+            $date = $request->input('date');
+            
             $transaction = [];
             $amount = 0;
 
@@ -94,7 +95,7 @@ class PaymentSaleInvoiceController extends Controller
             foreach ($request->paidAmount as $amountData) {
                 if ($amountData['amount'] > 0) {
                     $transaction = Transaction::create([
-                        'date' => new DateTime($date),
+                        'date' => $date,
                         'debitId' => $amountData['paymentType'] ? $amountData['paymentType'] : 1,
                         'creditId' => 4,
                         'amount' => takeUptoThreeDecimal($amountData['amount']),
@@ -128,51 +129,53 @@ class PaymentSaleInvoiceController extends Controller
                 ->sum('amount');
 
             $calculatedDueAmount = (($totalAmountCalc - $totalReturnAmount) - $totalPaid) + $instantReturnAmount;
-            
-            // Add commission and bag to due amount for display
-            $commissionValue = $saleInvoice->commission_value ?? 0;
-            $bagAmount = ($saleInvoice->bag_quantity ?? 0) * ($saleInvoice->bag_price ?? 0);
-            $calculatedDueAmount = $calculatedDueAmount + $commissionValue + $bagAmount;
-
-            // Calculate remaining commission and bag amounts after payment
-            $currentCommission = $saleInvoice->commission_value ?? 0;
-            $currentBagAmount = ($saleInvoice->bag_quantity ?? 0) * ($saleInvoice->bag_price ?? 0);
-            $currentPreviousDue = $saleInvoice->customer_previous_due ?? 0;
-
-            // Calculate how much of the payment goes to each component
-            $remainingPayment = $amount;
-            $newPreviousDue = max(0, $currentPreviousDue - $remainingPayment);
-            $remainingPayment = max(0, $remainingPayment - $currentPreviousDue);
-
-            $newBagAmount = max(0, $currentBagAmount - $remainingPayment);
-            $remainingPayment = max(0, $remainingPayment - $currentBagAmount);
-
-            $newCommission = max(0, $currentCommission - $remainingPayment);
 
             // Update customer's current_due_amount
             if ($customer) {
                 $newCustomerDue = max(0, $customer->current_due_amount - $amount);
                 $customer->update(['current_due_amount' => takeUptoThreeDecimal($newCustomerDue)]);
 
-                // Update sale invoice with all amounts
+                // Update sale invoice - only update paidAmount and dueAmount
                 SaleInvoice::where('id', $request->input('saleInvoiceNo'))
                     ->update([
                         'paidAmount' => takeUptoThreeDecimal($totalPaid),
                         'dueAmount' => takeUptoThreeDecimal($calculatedDueAmount),
-                        'commission_value' => takeUptoThreeDecimal($newCommission),
-                        'bag_quantity' => $newBagAmount > 0 ? $saleInvoice->bag_quantity : 0,
-                        'customer_previous_due' => takeUptoThreeDecimal($newPreviousDue),
                         'customer_current_due' => takeUptoThreeDecimal($newCustomerDue)
                     ]);
+                
+                // Update all future invoices for this customer
+                $futureInvoices = SaleInvoice::where('customerId', $saleInvoice->customerId)
+                    ->where('id', '>', $request->input('saleInvoiceNo'))
+                    ->orderBy('id', 'asc')
+                    ->get();
+                
+                foreach ($futureInvoices as $futureInvoice) {
+                    // Calculate previous due for this invoice (due before this invoice was created)
+                    $previousInvoicesDue = SaleInvoice::where('customerId', $saleInvoice->customerId)
+                        ->where('id', '<', $futureInvoice->id)
+                        ->get()
+                        ->sum(function($inv) {
+                            return $inv->dueAmount ?? 0;
+                        });
+                    
+                    // Recalculate total_calculation
+                    $invoiceAmount = $futureInvoice->totalAmount ?? 0;
+                    $commission = $futureInvoice->commission_value ?? 0;
+                    $bagAmt = ($futureInvoice->bag_quantity ?? 0) * ($futureInvoice->bag_price ?? 0);
+                    $newTotalCalculation = $invoiceAmount + $commission + $bagAmt + $previousInvoicesDue;
+                    
+                    $futureInvoice->update([
+                        'customer_previous_due' => takeUptoThreeDecimal($previousInvoicesDue),
+                        'total_calculation' => takeUptoThreeDecimal($newTotalCalculation),
+                        'customer_current_due' => takeUptoThreeDecimal($newCustomerDue)
+                    ]);
+                }
             } else {
-                // Update the sale invoice with new amounts
+                // Update the sale invoice
                 SaleInvoice::where('id', $request->input('saleInvoiceNo'))
                     ->update([
                         'paidAmount' => takeUptoThreeDecimal($totalPaid),
-                        'dueAmount' => takeUptoThreeDecimal($calculatedDueAmount),
-                        'commission_value' => takeUptoThreeDecimal($newCommission),
-                        'bag_quantity' => $newBagAmount > 0 ? $saleInvoice->bag_quantity : 0,
-                        'customer_previous_due' => takeUptoThreeDecimal($newPreviousDue)
+                        'dueAmount' => takeUptoThreeDecimal($calculatedDueAmount)
                     ]);
             }
 
